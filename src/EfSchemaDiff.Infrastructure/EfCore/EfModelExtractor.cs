@@ -6,6 +6,8 @@ using EfSchemaDiff.Core.Models;
 
 namespace EfSchemaDiff.Infrastructure.EfCore;
 
+using System.Reflection;
+
 /// <summary>
 /// Extracts a <see cref="DatabaseSchema"/> from an EF Core <see cref="IModel"/> or <see cref="DbContext"/>.
 /// Handles TPH/TPT/TPC hierarchies and owned types by merging all entity types that share the
@@ -46,6 +48,7 @@ public sealed class EfModelExtractor : IEfModelExtractor
                     Name = objectName,
                     Schema = schema,
                     IsView = isView,
+                    IsOwned = entityType.IsOwned(),
                     IsKeyless = entityType.FindPrimaryKey() is null,
                     IsTemporal = IsTemporalEntity(entityType),
                     IsImplicitJoinTable = IsImplicitlyCreatedJoinTable(entityType),
@@ -273,6 +276,8 @@ public sealed class EfModelExtractor : IEfModelExtractor
         public Dictionary<string, IndexDefinition> Indexes { get; } = [];
         public Dictionary<string, UniqueConstraintDefinition> UniqueConstraints { get; } = [];
 
+        public bool IsOwned { get; set; }
+
         public TableDefinition Build() => new()
         {
             Name = Name,
@@ -286,6 +291,7 @@ public sealed class EfModelExtractor : IEfModelExtractor
             ForeignKeys = [.. ForeignKeys.Values],
             Indexes = [.. Indexes.Values],
             UniqueConstraints = [.. UniqueConstraints.Values],
+            IsOwned = IsOwned,
         };
     }
 }

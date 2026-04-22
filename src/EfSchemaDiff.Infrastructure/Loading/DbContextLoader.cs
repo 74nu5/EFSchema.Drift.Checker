@@ -154,7 +154,7 @@ public sealed class DbContextLoader : IDbContextLoader
         }
         catch (ReflectionTypeLoadException ex)
         {
-            allTypes = ex.Types.OfType<Type>().ToArray();
+            allTypes = [.. ex.Types.OfType<Type>()];
         }
 
         var candidates = allTypes

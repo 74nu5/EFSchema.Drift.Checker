@@ -401,7 +401,9 @@ public sealed class SchemaComparer(IStoreTypeNormalizer storeTypeNormalizer) : I
         if (options.IgnoreTables.Count > 0)
             filtered = filtered.Where(t => !options.IgnoreTables.Any(p => MatchesGlob(p, TableGlobKey(t))));
 
-        return filtered.ToList();
+        filtered = filtered.Where(t => !t.IsOwned);
+
+        return [.. filtered];
     }
 
     private static bool ShouldIgnoreColumn(TableDefinition table, ColumnDefinition column, SchemaCompareOptions options)

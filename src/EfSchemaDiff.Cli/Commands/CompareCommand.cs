@@ -238,9 +238,7 @@ public static class CompareCommand
             // ----------------------------------------------------------------
             var filtered = new SchemaDiffResult
             {
-                Differences = diffResult.Differences
-                    .Where(d => d.Severity <= minSeverity)
-                    .ToList()
+                Differences = [.. diffResult.Differences.Where(d => d.Severity <= minSeverity)]
             };
 
             IOutputFormatter formatter = outputFormat.ToLowerInvariant() switch

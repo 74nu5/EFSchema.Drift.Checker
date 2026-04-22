@@ -62,7 +62,7 @@ public sealed class SqlServerSchemaReader : IDatabaseSchemaReader
                 {
                     "char" or "nchar" or "varchar" or "nvarchar" or "binary" or "varbinary" =>
                         c.CharMaxLength is -1 ? null : c.CharMaxLength,
-                    _ => null
+                    _ => null,
                 };
 
                 return new ColumnDefinition
