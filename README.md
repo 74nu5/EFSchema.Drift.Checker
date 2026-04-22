@@ -1,7 +1,9 @@
 # ef-schema-diff
 
+[![CI](https://github.com/74nu5/EFSchema.Drift.Checker/actions/workflows/ci.yml/badge.svg)](https://github.com/74nu5/EFSchema.Drift.Checker/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/v/ef-schema-diff?logo=nuget&label=nuget)](https://www.nuget.org/packages/ef-schema-diff)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/ef-schema-diff?logo=nuget&label=downloads)](https://www.nuget.org/packages/ef-schema-diff)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com)
-[![NuGet](https://img.shields.io/badge/nuget-1.0.0-blue?logo=nuget)](https://www.nuget.org/packages/ef-schema-diff)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **Detect schema drift between your EF Core model and your real SQL Server database — before it hits production.**

@@ -11,11 +11,21 @@
     <ToolCommandName>ef-schema-diff</ToolCommandName>
     <PackageId>ef-schema-diff</PackageId>
     <Version>1.0.0</Version>
-    <Description>CLI tool to detect schema drift between EF Core model and the real database.</Description>
-    <Authors>EfSchemaDiff Contributors</Authors>
-    <PackageTags>efcore;entity-framework;schema;diff;cli;tool</PackageTags>
+    <Description>CLI tool to detect schema drift between EF Core model and the real SQL Server database.</Description>
+    <Authors>74nu5</Authors>
+    <PackageTags>efcore;entity-framework;schema;diff;drift;cli;tool;sqlserver</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/74nu5/EFSchema.Drift.Checker</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/74nu5/EFSchema.Drift.Checker</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <RollForward>Major</RollForward>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Include README.md at the root of the NuGet package (displayed on NuGet.org) -->
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="0.55.2" />
