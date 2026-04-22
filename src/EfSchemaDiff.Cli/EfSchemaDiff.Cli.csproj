@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>ef-schema-diff</AssemblyName>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>ef-schema-diff</ToolCommandName>
+    <PackageId>ef-schema-diff</PackageId>
+    <Version>1.0.0</Version>
+    <Description>CLI tool to detect schema drift between EF Core model and the real database.</Description>
+    <Authors>EfSchemaDiff Contributors</Authors>
+    <PackageTags>efcore;entity-framework;schema;diff;cli;tool</PackageTags>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" Version="0.49.1" />
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.4" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.4" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="9.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EfSchemaDiff.Core\EfSchemaDiff.Core.csproj" />
+    <ProjectReference Include="..\EfSchemaDiff.Infrastructure\EfSchemaDiff.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

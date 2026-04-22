@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/EfSchemaDiff.Cli/EfSchemaDiff.Cli.csproj" />
+    <Project Path="src/EfSchemaDiff.Core/EfSchemaDiff.Core.csproj" />
+    <Project Path="src/EfSchemaDiff.Infrastructure/EfSchemaDiff.Infrastructure.csproj" />
+    <Project Path="src/EfSchemaDiff.Tests/EfSchemaDiff.Tests.csproj" />
+  </Folder>
+</Solution>
