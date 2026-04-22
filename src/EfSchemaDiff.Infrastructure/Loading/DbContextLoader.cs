@@ -55,16 +55,17 @@ public sealed class DbContextLoader : IDbContextLoader
         CheckEfCoreVersionCompatibility(assemblyPath);
 
         var alc = new EfSchemaDiffLoadContext(assemblyPath);
+
         try
         {
             var assembly = alc.LoadFromAssemblyPath(assemblyPath);
             var dbContextType = FindDbContextType(assembly, dbContextTypeName);
 
             DbContext? dbContext =
-                TryLoadViaDesignTimeFactory(assembly, dbContextType, connectionString)
-                ?? TryLoadViaOptionsConstructor(dbContextType, connectionString)
-                ?? TryLoadViaHostBuilder(alc, startupAssemblyPath, dbContextType, connectionString)
-                ?? TryLoadViaNoArgConstructor(dbContextType);
+                    TryLoadViaDesignTimeFactory(assembly, dbContextType, connectionString)
+                 ?? TryLoadViaOptionsConstructor(dbContextType, connectionString)
+                 ?? TryLoadViaHostBuilder(alc, startupAssemblyPath, dbContextType, connectionString)
+                 ?? TryLoadViaNoArgConstructor(dbContextType);
 
             if (dbContext is null)
                 throw new InvalidOperationException(
@@ -75,10 +76,44 @@ public sealed class DbContextLoader : IDbContextLoader
             using (dbContext)
                 return _extractor.Extract(dbContext);
         }
+        catch (InvalidOperationException)
+        {
+            throw; // version mismatch, "no DbContext found", etc. — already descriptive
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            var missing = ex.LoaderExceptions
+                .OfType<Exception>()
+                .Select(ExtractAssemblySimpleName)
+                .Distinct()
+                .Take(5)
+                .ToList();
+            var detail = missing.Count > 0
+                ? $" Missing: {string.Join(", ", missing)}"
+                : string.Empty;
+            throw new InvalidOperationException(
+                $"Could not load all types from '{Path.GetFileName(assemblyPath)}'.{detail}", ex);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException(
+                $"Error loading '{Path.GetFileName(assemblyPath)}': {ex.GetType().Name} — {ex.Message}", ex);
+        }
         finally
         {
             alc.Unload();
         }
+    }
+
+    private static string ExtractAssemblySimpleName(Exception? ex)
+    {
+        if (ex?.Message is null) return "?";
+        // FileNotFoundException: "Could not load file or assembly 'Name, Version=...'…"
+        var start = ex.Message.IndexOf('\'');
+        if (start < 0) return ex.Message.Length > 80 ? ex.Message[..80] : ex.Message;
+        start++;
+        var end = ex.Message.IndexOfAny([',', '\''], start);
+        return end > start ? ex.Message[start..end] : ex.Message[start..];
     }
 
     // -----------------------------------------------------------------------
@@ -151,16 +186,16 @@ public sealed class DbContextLoader : IDbContextLoader
     private static DbContext? TryLoadViaDesignTimeFactory(
         Assembly assembly, Type dbContextType, string connectionString)
     {
-        var factoryInterface = typeof(IDesignTimeDbContextFactory<>).MakeGenericType(dbContextType);
-
-        var factoryType = assembly
-            .GetTypes()
-            .FirstOrDefault(t => !t.IsAbstract && factoryInterface.IsAssignableFrom(t));
-
-        if (factoryType is null) return null;
-
         try
         {
+            var factoryInterface = typeof(IDesignTimeDbContextFactory<>).MakeGenericType(dbContextType);
+
+            var factoryType = assembly
+                             .GetTypes()
+                             .FirstOrDefault(t => !t.IsAbstract && factoryInterface.IsAssignableFrom(t));
+
+            if (factoryType is null) return null;
+
             var factory = Activator.CreateInstance(factoryType);
             if (factory is null) return null;
 

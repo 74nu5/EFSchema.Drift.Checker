@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "EfSchemaDiff.Cli": {
+      "commandName": "Project",
+      "commandLineArgs": "compare -a \"D:\\Orion\\C2i.AssetMonitoring_NETCore\\src\\C2i.AssetMonitoring.Data\\bin\\Debug\\net10.0\\C2i.AssetMonitoring.Data.dll\" -c DboContext -s \"Server=localhost;Database=local_prod;Trusted_Connection=false;Encrypt=false\""
+    }
+  }
+}

@@ -7,6 +7,7 @@ using EfSchemaDiff.Infrastructure.Comparison;
 using EfSchemaDiff.Infrastructure.EfCore;
 using EfSchemaDiff.Infrastructure.Loading;
 using EfSchemaDiff.Infrastructure.Providers.SqlServer;
+using Spectre.Console;
 
 namespace EfSchemaDiff.Cli.Commands;
 
@@ -107,6 +108,7 @@ public static class CompareCommand
     {
         var pr = ctx.ParseResult;
 
+        var noColor         = pr.GetValueForOption(NoColorOption);
         var assemblyPath    = pr.GetValueForOption(AssemblyOption)!;
         var contextName     = pr.GetValueForOption(ContextOption);
         var startupAssembly = pr.GetValueForOption(StartupAssemblyOption);
@@ -116,93 +118,124 @@ public static class CompareCommand
         var excludeNav      = pr.GetValueForOption(ExcludeNavTablesOption);
         var outputFormat    = pr.GetValueForOption(OutputOption) ?? "table";
         var outputFile      = pr.GetValueForOption(OutputFileOption);
-        var noColor         = pr.GetValueForOption(NoColorOption);
         var minSeverityRaw  = pr.GetValueForOption(MinSeverityOption) ?? "Warning";
 
         // Exit-code constants
-        const int ExitOk              = 0;
-        const int ExitDifferences     = 1;
-        const int ExitBadConfig       = 2;
-        const int ExitDbError         = 3;
-        const int ExitContextError    = 4;
-        const int ExitUnexpected      = 5;
+        const int ExitOk           = 0;
+        const int ExitDifferences  = 1;
+        const int ExitBadConfig    = 2;
+        const int ExitDbError      = 3;
+        const int ExitContextError = 4;
+        const int ExitUnexpected   = 5;
 
-        // -- Validate assembly path --
+        // Progress console writes to stderr so that structured output (JSON/SARIF/…) on
+        // stdout stays clean even when the user redirects stdout to a file.
+        var progress = CreateProgressConsole(noColor);
+
+        // -- Validate inputs before rendering the header --
         if (!File.Exists(assemblyPath))
         {
-            Console.Error.WriteLine($"[error] Assembly not found: {assemblyPath}");
+            progress.MarkupLine($"[red]✘[/] Assembly not found: [yellow]{Markup.Escape(assemblyPath)}[/]");
             ctx.ExitCode = ExitBadConfig;
             return;
         }
 
-        // -- Validate / parse minimum severity --
         if (!Enum.TryParse<DiffSeverity>(minSeverityRaw, ignoreCase: true, out var minSeverity))
         {
-            Console.Error.WriteLine($"[error] Unknown severity '{minSeverityRaw}'. Valid values: Error, Warning, Info.");
+            progress.MarkupLine($"[red]✘[/] Unknown severity '[yellow]{Markup.Escape(minSeverityRaw)}[/]'. Valid values: Error, Warning, Info.");
             ctx.ExitCode = ExitBadConfig;
             return;
         }
 
-        // -- Resolve connection string --
         var connection = pr.GetValueForOption(ConnectionOption)
                          ?? Environment.GetEnvironmentVariable("EFSD_CONNECTION");
         if (string.IsNullOrWhiteSpace(connection))
         {
-            Console.Error.WriteLine("[error] Connection string is required. Use --connection or set EFSD_CONNECTION.");
+            progress.MarkupLine("[red]✘[/] Connection string is required. Use [dim]--connection[/] or set [dim]EFSD_CONNECTION[/].");
             ctx.ExitCode = ExitBadConfig;
             return;
         }
 
         var cancellationToken = ctx.GetCancellationToken();
 
+        // -- Header --
+        RenderHeader(progress, assemblyPath, contextName, connection);
+
         try
         {
-            // -- Load EF Core model --
-            SchemaDiffResult diffResult;
+            // ----------------------------------------------------------------
+            // Step 1 — Load EF Core model
+            // ----------------------------------------------------------------
+            DatabaseSchema efSchema;
             try
             {
-                var efSchema = await new DbContextLoader(new EfModelExtractor())
-                    .LoadAndExtractAsync(
-                        assemblyPath,
-                        startupAssembly,
-                        contextName ?? string.Empty,
-                        connection,
-                        cancellationToken);
+                efSchema = await progress.Status()
+                    .Spinner(Spinner.Known.Dots2)
+                    .SpinnerStyle(Style.Parse("blue bold"))
+                    .StartAsync("Loading EF Core model...", async _ =>
+                        await new DbContextLoader(new EfModelExtractor())
+                            .LoadAndExtractAsync(assemblyPath, startupAssembly,
+                                contextName ?? string.Empty, connection, cancellationToken));
 
-                // -- Read database schema --
-                var dbSchema = await new SqlServerSchemaReader()
-                    .ReadAsync(connection, cancellationToken);
-
-                // -- Compare --
-                var options = new SchemaCompareOptions
-                {
-                    Schema = schema,
-                    IgnoreTables = ignoreTables,
-                    IgnoreColumns = ignoreColumns,
-                    ExcludeNavigationTables = excludeNav,
-                };
-
-                diffResult = new SchemaComparer(new SqlServerStoreTypeNormalizer())
-                    .Compare(efSchema, dbSchema, options);
+                progress.MarkupLine($"[green]✔[/] EF Core model loaded    [dim]({efSchema.Tables.Count} {Pluralize(efSchema.Tables.Count, "entity", "entities")})[/]");
             }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (IsDbException(ex))
-            {
-                Console.Error.WriteLine($"[error] Database connection failed: {ex.Message}");
-                ctx.ExitCode = ExitDbError;
-                return;
-            }
+            catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"[error] Could not load DbContext: {ex.Message}");
+                progress.MarkupLine("[red]✘[/] Failed to load EF Core model");
+                RenderException(progress, ex);
                 ctx.ExitCode = ExitContextError;
                 return;
             }
 
-            // -- Filter by min severity --
+            // ----------------------------------------------------------------
+            // Step 2 — Read SQL Server schema
+            // ----------------------------------------------------------------
+            DatabaseSchema dbSchema;
+            try
+            {
+                dbSchema = await progress.Status()
+                    .Spinner(Spinner.Known.Dots2)
+                    .SpinnerStyle(Style.Parse("blue bold"))
+                    .StartAsync("Reading SQL Server schema...", async _ =>
+                        await new SqlServerSchemaReader().ReadAsync(connection, cancellationToken));
+
+                progress.MarkupLine($"[green]✔[/] Database schema read     [dim]({dbSchema.Tables.Count} {Pluralize(dbSchema.Tables.Count, "table", "tables")})[/]");
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) when (IsDbException(ex))
+            {
+                progress.MarkupLine("[red]✘[/] Database connection failed");
+                progress.MarkupLine($"  [red]{Markup.Escape(ex.Message)}[/]");
+                ctx.ExitCode = ExitDbError;
+                return;
+            }
+
+            // ----------------------------------------------------------------
+            // Step 3 — Compare (fast, inline — no spinner needed)
+            // ----------------------------------------------------------------
+            var options = new SchemaCompareOptions
+            {
+                Schema = schema,
+                IgnoreTables = ignoreTables,
+                IgnoreColumns = ignoreColumns,
+                ExcludeNavigationTables = excludeNav,
+            };
+
+            var diffResult = new SchemaComparer(new SqlServerStoreTypeNormalizer())
+                .Compare(efSchema, dbSchema, options);
+
+            var n = diffResult.DifferenceCount;
+            if (n == 0)
+                progress.MarkupLine("[green]✔[/] Comparison complete      [dim](no differences)[/]");
+            else
+                progress.MarkupLine($"[yellow]✔[/] Comparison complete      [dim]({n} {Pluralize(n, "difference", "differences")})[/]");
+
+            progress.WriteLine();
+
+            // ----------------------------------------------------------------
+            // Filter + format + output
+            // ----------------------------------------------------------------
             var filtered = new SchemaDiffResult
             {
                 Differences = diffResult.Differences
@@ -210,13 +243,12 @@ public static class CompareCommand
                     .ToList()
             };
 
-            // -- Format output --
             IOutputFormatter formatter = outputFormat.ToLowerInvariant() switch
             {
                 "json"     => new JsonOutputFormatter(),
                 "markdown" => new MarkdownOutputFormatter(),
                 "sarif"    => new SarifOutputFormatter(),
-                _          => new ConsoleOutputFormatter(noColor)
+                _          => new ConsoleOutputFormatter(noColor),
             };
 
             var output = formatter.Format(filtered);
@@ -224,45 +256,114 @@ public static class CompareCommand
             if (!string.IsNullOrEmpty(outputFile))
             {
                 await File.WriteAllTextAsync(outputFile, output, cancellationToken);
-                // Still print a summary to console when writing to file
+                progress.MarkupLine($"[green]✔[/] Output written to [dim]{Markup.Escape(outputFile)}[/]");
                 if (outputFormat.ToLowerInvariant() != "table")
-                    Console.WriteLine(BuildSummaryLine(filtered));
+                    progress.MarkupLine(BuildSummaryMarkup(filtered));
             }
             else if (!string.IsNullOrEmpty(output))
             {
-                Console.Write(output);
+                Console.Write(output); // stdout — stays clean for piping/redirection
             }
 
             ctx.ExitCode = filtered.HasDifferences ? ExitDifferences : ExitOk;
         }
         catch (OperationCanceledException)
         {
-            Console.Error.WriteLine("[cancelled]");
+            progress.MarkupLine("[yellow]⊘ Operation cancelled[/]");
             ctx.ExitCode = ExitUnexpected;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[fatal] Unexpected error: {ex}");
+            progress.MarkupLine("[red]⚡ Unexpected error[/]");
+            progress.WriteException(ex);
             ctx.ExitCode = ExitUnexpected;
         }
     }
+
+    // ---------------------------------------------------------------------------
+    // Console helpers
+    // ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Creates a progress console that writes to <see cref="Console.Error"/> so that
+    /// structured output (JSON, SARIF, …) on stdout is never polluted.
+    /// </summary>
+    private static IAnsiConsole CreateProgressConsole(bool noColor) =>
+        AnsiConsole.Create(new AnsiConsoleSettings
+        {
+            ColorSystem = noColor ? ColorSystemSupport.NoColors : ColorSystemSupport.Detect,
+            Out = new AnsiConsoleOutput(Console.Error),
+        });
+
+    private static void RenderHeader(IAnsiConsole console, string assemblyPath, string? contextName, string connection)
+    {
+        console.Write(new Rule("[bold blue]ef-schema-diff[/]").RuleStyle(Style.Parse("blue dim")));
+
+        var grid = new Grid()
+            .AddColumn(new GridColumn().Width(12).NoWrap())
+            .AddColumn(new GridColumn());
+
+        grid.AddRow("[dim]Assembly[/]", $"[bold]{Markup.Escape(Path.GetFileName(assemblyPath))}[/]");
+        if (!string.IsNullOrWhiteSpace(contextName))
+            grid.AddRow("[dim]Context[/]", $"[bold]{Markup.Escape(contextName)}[/]");
+        grid.AddRow("[dim]Database[/]", $"[bold]{Markup.Escape(ExtractServerInfo(connection))}[/]");
+
+        console.Write(grid);
+        console.WriteLine();
+    }
+
+    /// <summary>Extracts server/database from the connection string without exposing credentials.</summary>
+    private static string ExtractServerInfo(string connectionString)
+    {
+        string? server = null, database = null;
+        foreach (var part in connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var idx = part.IndexOf('=');
+            if (idx < 0) continue;
+            var key   = part[..idx].Trim().ToUpperInvariant();
+            var value = part[(idx + 1)..].Trim();
+            if (key is "SERVER" or "DATA SOURCE")      server   = value;
+            else if (key is "DATABASE" or "INITIAL CATALOG") database = value;
+        }
+        return (server, database) switch
+        {
+            ({ } s, { } d) => $"{s} / {d}",
+            ({ } s, null)  => s,
+            (null, { } d)  => d,
+            _              => "(connection string)",
+        };
+    }
+
+    private static void RenderException(IAnsiConsole console, Exception ex)
+    {
+        if (ex.InnerException is not null)
+            console.WriteException(ex, ExceptionFormats.ShortenEverything);
+        else
+            console.MarkupLine($"  [red]{Markup.Escape(ex.Message)}[/]");
+    }
+
+    private static string BuildSummaryMarkup(SchemaDiffResult result)
+    {
+        if (!result.HasDifferences) return "[green]✔ No differences[/]";
+
+        var parts = new List<string>();
+        if (result.ErrorCount   > 0) parts.Add($"[red]{result.ErrorCount} {Pluralize(result.ErrorCount, "error", "errors")}[/]");
+        if (result.WarningCount > 0) parts.Add($"[yellow]{result.WarningCount} {Pluralize(result.WarningCount, "warning", "warnings")}[/]");
+        if (result.InfoCount    > 0) parts.Add($"[blue]{result.InfoCount} info[/]");
+
+        var icon = result.ErrorCount > 0 ? "[red]✘[/]" : "[yellow]⚠[/]";
+        return $"{icon} {result.DifferenceCount} {Pluralize(result.DifferenceCount, "difference", "differences")}  {string.Join("  [dim]·[/]  ", parts)}";
+    }
+
+    private static string Pluralize(int count, string singular, string plural) =>
+        count == 1 ? singular : plural;
 
     // ---------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------
 
-    private static string BuildSummaryLine(SchemaDiffResult result)
-    {
-        if (!result.HasDifferences)
-            return "✅ No schema differences found.";
-
-        return $"⚠️  {result.DifferenceCount} difference(s): " +
-               $"{result.ErrorCount} error(s), {result.WarningCount} warning(s), {result.InfoCount} info(s).";
-    }
-
     private static bool IsDbException(Exception ex)
     {
-        // Microsoft.Data.SqlClient exceptions and related timeout/connection exceptions
         var typeName = ex.GetType().FullName ?? string.Empty;
         return typeName.Contains("SqlException", StringComparison.OrdinalIgnoreCase)
                || typeName.Contains("SqlClient", StringComparison.OrdinalIgnoreCase)

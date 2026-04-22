@@ -38,6 +38,8 @@ public sealed class ConsoleOutputFormatter : IOutputFormatter
             return;
         }
 
+        console.Write(new Rule("[bold]Differences[/]").RuleStyle(Style.Parse("yellow dim")));
+
         var table = new Table();
         table.AddColumn(new TableColumn("[bold]Type[/]").LeftAligned());
         table.AddColumn(new TableColumn("[bold]Object[/]").LeftAligned());
@@ -55,14 +57,14 @@ public sealed class ConsoleOutputFormatter : IOutputFormatter
         console.Write(table);
         console.WriteLine();
 
-        var summaryColor = result.ErrorCount > 0 ? "red" : result.WarningCount > 0 ? "yellow" : "blue";
-        console.MarkupLine($"[{summaryColor}]Differences found: {result.DifferenceCount}[/]");
-        if (result.ErrorCount > 0)
-            console.MarkupLine($"  [red]- Errors:   {result.ErrorCount}[/]");
-        if (result.WarningCount > 0)
-            console.MarkupLine($"  [yellow]- Warnings: {result.WarningCount}[/]");
-        if (result.InfoCount > 0)
-            console.MarkupLine($"  [blue]- Info:     {result.InfoCount}[/]");
+        var parts = new List<string>();
+        if (result.ErrorCount   > 0) parts.Add($"[red]{result.ErrorCount} {(result.ErrorCount == 1 ? "error" : "errors")}[/]");
+        if (result.WarningCount > 0) parts.Add($"[yellow]{result.WarningCount} {(result.WarningCount == 1 ? "warning" : "warnings")}[/]");
+        if (result.InfoCount    > 0) parts.Add($"[blue]{result.InfoCount} info[/]");
+
+        var icon = result.ErrorCount > 0 ? "[red]✘[/]" : "[yellow]⚠[/]";
+        var detail = parts.Count > 0 ? "  [dim]·[/]  " + string.Join("  [dim]·[/]  ", parts) : string.Empty;
+        console.MarkupLine($"{icon} {result.DifferenceCount} {(result.DifferenceCount == 1 ? "difference" : "differences")}{detail}");
     }
 
     private static string FormatDiffType(DiffType type, DiffSeverity severity)
