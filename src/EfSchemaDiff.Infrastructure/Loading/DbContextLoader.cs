@@ -51,6 +51,9 @@ public sealed class DbContextLoader : IDbContextLoader
         string dbContextTypeName,
         string connectionString)
     {
+        // Fail fast with a clear message if the target project uses a different EF Core major version.
+        CheckEfCoreVersionCompatibility(assemblyPath);
+
         var alc = new EfSchemaDiffLoadContext(assemblyPath);
         try
         {
@@ -79,13 +82,47 @@ public sealed class DbContextLoader : IDbContextLoader
     }
 
     // -----------------------------------------------------------------------
+    // Version compatibility check
+    // -----------------------------------------------------------------------
+
+    private static void CheckEfCoreVersionCompatibility(string assemblyPath)
+    {
+        var resolver = new System.Runtime.Loader.AssemblyDependencyResolver(assemblyPath);
+        var resolvedPath = resolver.ResolveAssemblyToPath(new AssemblyName("Microsoft.EntityFrameworkCore"));
+        if (resolvedPath is null) return; // EF Core not a direct dep — let it proceed
+
+        var userVersion = AssemblyName.GetAssemblyName(resolvedPath).Version;
+        var toolVersion = typeof(DbContext).Assembly.GetName().Version;
+
+        if (userVersion is null || toolVersion is null) return;
+        if (userVersion.Major == toolVersion.Major) return;
+
+        throw new InvalidOperationException(
+            $"EF Core major version mismatch.\n" +
+            $"  Target assembly requires: EF Core {userVersion.Major}.{userVersion.Minor}.{userVersion.Build}\n" +
+            $"  ef-schema-diff is built with: EF Core {toolVersion.Major}.{toolVersion.Minor}.{toolVersion.Build}\n\n" +
+            $"Ensure the target project uses EF Core {toolVersion.Major}.x.");
+    }
+
+    // -----------------------------------------------------------------------
     // Strategy helpers
     // -----------------------------------------------------------------------
 
     private static Type FindDbContextType(Assembly assembly, string typeName)
     {
-        var candidates = assembly
-            .GetTypes()
+        // GetTypes() can throw ReflectionTypeLoadException if some types fail to load
+        // due to optional/unresolved dependencies. We collect the types that did load.
+        Type[] allTypes;
+        try
+        {
+            allTypes = assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            allTypes = ex.Types.OfType<Type>().ToArray();
+        }
+
+        var candidates = allTypes
             .Where(t => !t.IsAbstract && typeof(DbContext).IsAssignableFrom(t))
             .ToList();
 
